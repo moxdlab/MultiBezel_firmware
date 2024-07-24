@@ -5,7 +5,8 @@
 #ifndef MULTITOUCH_BAND_TOUCH_H
 #define MULTITOUCH_BAND_TOUCH_H
 
-#define MAX_CHANNELS 30
+#define MAX_CHANNELS 8
+#define FIRST_CHANNEL 7
 
 class Touch {
 private:

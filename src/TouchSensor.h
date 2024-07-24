@@ -22,7 +22,7 @@ private:
 public:
 
     void setup(int prescaler) {
-        int ret1 = sensor1.setup(Trill::TRILL_FLEX);
+        int ret1 = sensor1.setup(Trill::TRILL_CRAFT);
 
         //TODO: Error handling
         if (ret1 != 0) {}
@@ -36,10 +36,16 @@ public:
 
     void read_data() {
         unsigned int loc = 0;
-        auto readSensorData = [this, &loc](Trill &sensor) {
+        unsigned int iterator = 0;
+        auto readSensorData = [this, &loc, &iterator](Trill &sensor) {
             sensor.requestRawData();
             while (sensor.rawDataAvailable() && loc < MAX_CHANNELS) {
-                this->data[loc++] = sensor.rawDataRead();
+                if(iterator >= FIRST_CHANNEL){
+                    this->data[loc++] = sensor.rawDataRead();
+                }else{
+                    sensor.rawDataRead();
+                }
+                iterator++;
             }
         };
 

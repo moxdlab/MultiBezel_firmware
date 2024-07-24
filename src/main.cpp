@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Trill.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
@@ -20,11 +19,10 @@
 
 
 // magic numbers
-const u_int16_t noiseThreshold = 150;
 const int prescaler = 3;
 
 // values for wifi
-const char *ssid = "MultiCrown-AP";
+const char *ssid = "MultiBezel-AP";
 const char *password = "12345678";
 const char *udpAddress = "192.168.4.2";
 const int udpPort = 44444;
@@ -32,60 +30,17 @@ WiFiUDP udp;
 int64_t lastMessageSent, timeSinceBoot;
 int packetsPerSecond = 121;
 
-// required objects
-const uint8_t numberOfChannels = 8;
-const unsigned int maxNumCentroids = 5;
-const uint8_t usedChannels[numberOfChannels] = {7,8,9,10,11,12,13,14};
-const unsigned int NUM_TOTAL_PADS = 30;
-int numberOfTouches = 0;
-
-uint16_t rawData[NUM_TOTAL_PADS];
-CentroidDetection<maxNumCentroids, numberOfChannels> slider;
-Trill trillSensor;
+MultitouchSensor multitouchSensor;
+int firstChannel = 7;
 
 void setupWiFi();
-void printBezelTouches();
-void processRawData();
-void sendDataViaUDP();
+void printBezelTouches(std::array<Touch, MAX_TOUCHES> touches);
+void sendDataViaUDP(std::array<Touch, MAX_TOUCHES> touches);
 
 void setup() {
-
-    // setup custom slider, i.e. radial touch ring
-    slider.setup(usedChannels, numberOfChannels);
-    //slider.setMinimumTouchSize(1);
-
-
     Serial.begin(115200);
 
-    int trillsetup = 0;
-    do {
-        Serial.print("I2C scanner. Scanning... ");
-
-        trillsetup = trillSensor.setup(Trill::TRILL_CRAFT );
-        if (trillsetup != 0) {
-            Serial.print("failed to initialise TRILL FLEX. ");
-            Serial.print("Error code: ");
-            Serial.print(trillsetup);
-            Serial.println(" trying again.");
-            delay(1000);
-        } else {
-            Serial.println("initialised TRILL FLEX.");
-        }
-
-    } while (trillsetup != 0);
-    delay(50);
-
-    //   pinMode(SELECTOR_PIN, INPUT);
-    trillSensor.setMode(Trill::Mode::DIFF);
-
-    //   // The value of the prescaler is an integer from 1-8. There are two rules of thumb for determining a prescaler value:
-    //   // - A higher value prescaler produces a longer charging time, and is better for more resistive materials and larger conductive objects connected.
-    //   // - A lower value prescaler is better for proximity sensing
-    trillSensor.setPrescaler(prescaler);
-    delay(50);
-
-    //   // The value of the noise threshold is an integer from 0-255. If the measured value of a pad is less than the noise threshold, it is rounded down to 0.
-    trillSensor.setNoiseThreshold(noiseThreshold);
+    multitouchSensor.setup(prescaler);
     delay(50);
 
     setupWiFi();
@@ -107,48 +62,26 @@ unsigned loop_cnt = 0;
 void loop() {
     timeSinceBoot = esp_timer_get_time();
     if ((timeSinceBoot - lastMessageSent) >= 1000000 / packetsPerSecond) {
-        if (!trillSensor.requestRawData()) {
-            Serial.println("Failed reading from device. Is it disconnected?");
-            return setup();
-        }
-
+        multitouchSensor.read_data();
+        std::array<Touch, MAX_TOUCHES> touches = multitouchSensor.get_touches_from_data();
 
         n = 0;
-        processRawData();
-        sendDataViaUDP();
-        printBezelTouches();
+        //sendDataViaUDP(touches);
+        printBezelTouches(touches);
     }
 }
 
-void processRawData() {
-    // read all the data from the device into a local buffer
-    while (trillSensor.rawDataAvailable() > 0 && n < NUM_TOTAL_PADS) {
-        rawData[n] = trillSensor.rawDataRead();
-        n++;
-    }
-    // have custom slider process the raw data into touches
-    slider.process(rawData);
-
-    // check which pads have been touched
-    bool padsActive[numberOfChannels] = {0, 0, 0, 0, 0, 0, 0, 0};
-    for (int i = 0; i < slider.getNumTouches(); i++) {
-        int pad = slider.touchLocation(i) >> 7;
-        padsActive[pad] = 1;
-    }
-    numberOfTouches = slider.getNumTouches();
-    // if first and last pads where touched, then correct count
-    if (padsActive[0] && padsActive[7]) {
-        numberOfTouches--;
-    }
-}
-
-void sendDataViaUDP() {
+void sendDataViaUDP(std::array<Touch, MAX_TOUCHES> touches) {
     // send all raw data to receiver including number of touches as last int[] value
-    int arr[numberOfChannels + 1];
-    for (n = 0; n < numberOfChannels; n++) {
-        arr[n] = rawData[usedChannels[n]];
+    int arr[MAX_TOUCHES + 1];
+    for (n = 0; n < MAX_TOUCHES; n++) {
+        if(touches[n].get_position() > 0) {
+            arr[n] = (touches[n].get_position() * 100) - firstChannel * 100;
+        }else{
+            arr[n] = -1;
+        }
     }
-    arr[numberOfChannels] = numberOfTouches;
+    arr[MAX_TOUCHES] = multitouchSensor.get_num_touches();
 
     udp.beginPacket(udpAddress, udpPort);
     udp.write((const uint8_t*)arr, sizeof(arr));
@@ -156,55 +89,13 @@ void sendDataViaUDP() {
     lastMessageSent = esp_timer_get_time();
 }
 
-void printBezelTouches() {
-    Serial.printf("%03d: ", loop_cnt++ % 1000);
-    Serial.printf(" # ");
-
-
-    // print the channels we feed into the centroid detection
-    // also use threshold to remove low values
-    for (n = 0; n < numberOfChannels; n++) {
-        u_int16_t rawValue = rawData[usedChannels[n]];
-
-        if ((rawValue > noiseThreshold) || (rawValue == 0)) {
-            Serial.printf("%05u ", rawValue);
-        } else {
-            Serial.printf("--%03u ", rawValue);
-        }
+void printBezelTouches(std::array<Touch, MAX_TOUCHES> touches) {
+    for (int i = 0; i < multitouchSensor.get_num_touches(); i++) {
+        Touch curTouch = touches[i];
+        if(i != 0)
+            Serial.print("  ");
+        Serial.print(curTouch.get_position());
+        if(i == multitouchSensor.get_num_touches() - 1)
+            Serial.println("");
     }
-
-    int numtouches = slider.getNumTouches();
-
-    if (slider.getNumTouches() == 0) {
-        Serial.print("| no fingers ");
-    } else {
-
-        // check which pads have been touched
-        bool padsActive[numberOfChannels] = {0, 0, 0, 0, 0, 0, 0, 0};
-        for (int i = 0; i < numtouches; i++) {
-            int pad = slider.touchLocation(i) >> 7;
-            padsActive[pad] = 1;
-        }
-
-        // if first and last pads where touched, then correct count
-        if (padsActive[0] && padsActive[7]) {
-            numtouches--;
-        }
-
-        Serial.printf("| %2d fingers ", numtouches);
-
-        for (int i = 0; i < numtouches; i++) {
-            int pad = slider.touchLocation(i) >> 7;
-            //Serial.printf(" (loc: %4d", slider.touchLocation(i));
-            Serial.printf(" pad: %02d ", pad);
-            //Serial.printf(" size: %4d)", slider.touchSize(i));
-        }
-
-        // if first and last pads where touched, then correct count
-        if (padsActive[0] && padsActive[7]) {
-            Serial.print("CORRECTED TOUCH ON EDGE");
-        }
-    }
-
-    Serial.println("");
 }

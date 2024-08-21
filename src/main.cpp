@@ -31,7 +31,6 @@ int64_t lastMessageSent, timeSinceBoot;
 int packetsPerSecond = 121;
 
 MultitouchSensor multitouchSensor;
-int firstChannel = 7;
 
 void setupWiFi();
 void printBezelTouches(std::array<Touch, MAX_TOUCHES> touches);
@@ -66,8 +65,8 @@ void loop() {
         std::array<Touch, MAX_TOUCHES> touches = multitouchSensor.get_touches_from_data();
 
         n = 0;
-        //sendDataViaUDP(touches);
-        printBezelTouches(touches);
+        sendDataViaUDP(touches);
+        //printBezelTouches(touches);
     }
 }
 
@@ -76,7 +75,7 @@ void sendDataViaUDP(std::array<Touch, MAX_TOUCHES> touches) {
     int arr[MAX_TOUCHES + 1];
     for (n = 0; n < MAX_TOUCHES; n++) {
         if(touches[n].get_position() > 0) {
-            arr[n] = (touches[n].get_position() * 100) - firstChannel * 100;
+            arr[n] = touches[n].get_position() * 100;
         }else{
             arr[n] = -1;
         }

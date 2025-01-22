@@ -1,7 +1,3 @@
-//
-// Created by Joel Neumann on 22.12.23.
-//
-
 #ifndef MULTITOUCH_BAND_TOUCH_H
 #define MULTITOUCH_BAND_TOUCH_H
 

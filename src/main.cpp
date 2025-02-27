@@ -6,18 +6,6 @@
 
 #include "TouchSensor.h"
 
-/**
- *
- * Custom flex pcb for multi crown has pad on channels 22   23   24   25   26   27   28   29  (started counting at 0)
- *
- * inspiration for custom slider based on https://github.com/BelaPlatform/Trill-Arduino/blob/master/examples/custom-slider/custom-slider.ino
- * and https://forum.bela.io/d/4035-radial-sliders-with-trill/
- *
- * FIXME Mount cap sensor to smartwatch case. And maybe add a plain behind the sensor, so that the fingers are like to touch the sensor while rotating the crown.
- * FIXME ---does not use circular touch detection on edges of array--- simply merging touch on first and last pad if touch is recognized
-*/
-
-
 // magic numbers
 const int prescaler = 3;
 
